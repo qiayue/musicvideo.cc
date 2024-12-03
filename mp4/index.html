@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Music Note Visualizer</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: white;
+            font-family: Arial;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        #visualizer {
+            aspect-ratio: 9/16;
+            width: 100%;
+            max-width: 500px;
+            margin: 20px 0;
+            border: 1px solid #333;
+            background: #000;
+        }
+        .controls {
+            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+            width: 100%;
+            max-width: 500px;
+        }
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: white;
+            width: 100%;
+        }
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+            background: #4CAF50;
+            border: none;
+            color: white;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        button.record {
+            background: #f44336;
+        }
+        button.download {
+            background: #2196F3;
+        }
+        #status {
+            margin: 10px 0;
+            color: #4CAF50;
+            font-size: 16px;
+            height: 20px;
+        }
+        input[type="range"] {
+            width: 200px;
+        }
+        #spectrum {
+            width: 100%;
+            height: 100px;
+            background: #111;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="visualizer"></canvas>
+    <div id="status">Upload a music file</div>
+    <div class="controls">
+        <div class="buttons">
+            <input type="file" id="audioInput" accept="audio/*" style="display:none">
+            <button onclick="document.getElementById('audioInput').click()">Upload Music</button>
+            <button id="playBtn" disabled>Play</button>
+            <button id="recordBtn" class="record" disabled>Record</button>
+            <button id="downloadBtn" class="download" disabled>Download Recording</button>
+        </div>
+        <div class="slider-container">
+            <span>Beat Sensitivity:</span>
+            <input type="range" id="sensitivity" min="1" max="100" value="50">
+            <span id="sensitivityValue">50%</span>
+        </div>
+        <canvas id="spectrum"></canvas>
+    </div>
+
+    <script>
+    class Balloon {
+        constructor(x, beatTime, speed, energy) {
+            this.x = x;
+            this.y = 0;
+            this.beatTime = beatTime;
+            this.speed = speed;
+            this.baseSize = 30; // 气球基础大小
+            this.size = this.baseSize + (energy * 5);
+            this.active = true;
+            this.popped = false;
+            this.alpha = 1;
+            this.energy = energy;
+            this.color = this.randomColor();
+            this.rotation = Math.random() * Math.PI / 6 - Math.PI / 12; // 随机倾斜角度
+            this.swayAngle = 0; // 用于摇摆动画
+            this.swaySpeed = Math.random() * 2 + 1; // 随机摇摆速度
+        }
+
+        randomColor() {
+            const colors = [
+                '#FF6B6B', // 红色
+                '#4ECDC4', // 青色
+                '#FFD93D', // 黄色
+                '#95E1D3', // 浅绿
+                '#A8E6CF', // 薄荷
+                '#FFB6B9'  // 粉色
+            ];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        draw(ctx, currentTime) {
+            ctx.save();
+            ctx.globalAlpha = this.alpha;
+            ctx.translate(this.x, this.y);
+            
+            // 添加摇摆效果
+            this.swayAngle = Math.sin(currentTime * this.swaySpeed) * 0.1;
+            ctx.rotate(this.rotation + this.swayAngle);
+
+            if (!this.popped) {
+                // 绘制气球
+                ctx.beginPath();
+                ctx.fillStyle = this.color;
+                
+                // 气球主体（泪滴形状）
+                ctx.moveTo(0, -this.size);
+                ctx.bezierCurveTo(
+                    this.size, -this.size,
+                    this.size, this.size/2,
+                    0, this.size/2
+                );
+                ctx.bezierCurveTo(
+                    -this.size, this.size/2,
+                    -this.size, -this.size,
+                    0, -this.size
+                );
+                
+                // 气球结
+                ctx.moveTo(0, this.size/2);
+                ctx.lineTo(-4, this.size/2 + 10);
+                ctx.lineTo(4, this.size/2 + 10);
+                ctx.closePath();
+                
+                ctx.fill();
+                ctx.stroke();
+
+                // 添加高光效果
+                const gradient = ctx.createLinearGradient(-this.size/3, -this.size/2, this.size/4, 0);
+                gradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
+                gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = gradient;
+                ctx.fill();
+            } else {
+                // 爆炸效果
+                const particles = 12;
+                const radius = this.size * (1 - this.alpha);
+                for (let i = 0; i < particles; i++) {
+                    const angle = (i / particles) * Math.PI * 2;
+                    const x = Math.cos(angle) * radius;
+                    const y = Math.sin(angle) * radius;
+                    
+                    ctx.beginPath();
+                    ctx.fillStyle = this.color;
+                    ctx.globalAlpha = this.alpha;
+                    ctx.arc(x, y, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            
+            ctx.restore();
+        }
+    }
+
+    
+    class MusicNote {
+        constructor(x, beatTime, speed, energy) {
+            this.x = x;
+            this.y = 0;
+            this.beatTime = beatTime;
+            this.speed = speed;
+            this.size = 20 + (energy * 10); // 根据能量调整大小
+            this.active = true;
+            this.hit = false;
+            this.alpha = 1;
+            this.energy = energy;
+
+        }
+    }
+
+    class BeatDetector {
+        constructor(sampleRate) {
+            this.sampleRate = sampleRate;
+            this.sensitivity = 0.5;
+            this.energyHistory = [];
+            this.historyLength = 30;
+        }
+
+        setSensitivity(value) {
+            this.sensitivity = 2.1 - (value / 100) * 1.9;
+            console.log('Sensitivity:', this.sensitivity);
+        }
+
+        analyzeAudioData(audioData) {
+            const fftSize = 2048;
+            const bufferLength = audioData.length;
+            const sampleRate = this.sampleRate;
+            const beats = [];
+            let lastBeatTime = 0;
+
+            for (let i = 0; i < bufferLength; i += fftSize) {
+                let sum = 0;
+                // 分析当前帧的能量
+                for (let j = 0; j < fftSize && (i + j) < bufferLength; j++) {
+                    sum += audioData[i + j] * audioData[i + j];
+                }
+                const instantEnergy = sum / fftSize;
+
+                // 更新能量历史
+                this.energyHistory.push(instantEnergy);
+                if (this.energyHistory.length > this.historyLength) {
+                    this.energyHistory.shift();
+                }
+
+                // 计算局部平均能量
+                const averageEnergy = this.energyHistory.reduce((a, b) => a + b, 0) / 
+                                    this.energyHistory.length;
+
+                const time = i / sampleRate;
+
+                // 判断是否为节拍点
+                if (time - lastBeatTime >= 0.2) { // 最小节拍间隔200ms
+                    if (instantEnergy > averageEnergy * this.sensitivity) {
+                        beats.push({
+                            time: time,
+                            energy: instantEnergy / averageEnergy
+                        });
+                        lastBeatTime = time;
+                    }
+                }
+            }
+
+            return beats;
+        }
+    }
+
+    class MusicVisualizer {
+        constructor() {
+            this.canvas = document.getElementById('visualizer');
+            this.ctx = this.canvas.getContext('2d');
+            this.spectrumCanvas = document.getElementById('spectrum');
+            this.spectrumCtx = this.spectrumCanvas.getContext('2d');
+            this.statusElement = document.getElementById('status');
+            this.audioContext = new AudioContext();
+            
+            this.setupCanvas();
+            this.setupControls();
+            this.setupRecording();
+            this.animate = this.animate.bind(this);
+
+            this.judgeLineY = this.canvas.height - 100;
+            this.noteSpeed = 300;
+            this.notes = [];
+            this.beatDetector = new BeatDetector(this.audioContext.sampleRate);
+            
+            // Recording state
+            this.isRecording = false;
+            this.mediaRecorder = null;
+            this.recordedChunks = [];
+            this.recordingStream = null;
+
+            this.isPlaying = false;
+            this.audioSource = null;
+            this.recordingDestination = null;
+
+            this.setupFFmpeg();
+        }
+
+        setStatus(msg) {
+            this.statusElement.textContent = msg;
+            console.log('Status:', msg);
+        }
+
+        setupCanvas() {
+            // 设置主画布
+            const width = Math.min(window.innerWidth, 500);
+            const height = width * 16/9;
+            this.canvas.width = width;
+            this.canvas.height = height;
+
+            // 设置频谱画布
+            this.spectrumCanvas.width = width;
+            this.spectrumCanvas.height = 100;
+        }
+
+        setupControls() {
+            document.getElementById('audioInput').onchange = this.handleAudioUpload.bind(this);
+            document.getElementById('playBtn').onclick = () => {
+                if (this.audioBuffer && this.beats && !this.isPlaying) {
+                    this.startPlayback();
+                }
+            };
+
+            // 移除录制按钮的点击事件处理，因为现在录制是自动的
+            //this.recordBtn.style.display = 'none';
+            
+            const sensitivitySlider = document.getElementById('sensitivity');
+            const sensitivityValue = document.getElementById('sensitivityValue');
+            
+            sensitivitySlider.oninput = () => {
+                sensitivityValue.textContent = `${sensitivitySlider.value}%`;
+                if (this.audioBuffer) {
+                    this.beatDetector.setSensitivity(sensitivitySlider.value);
+                    this.analyzeAudio();
+                }
+            };
+        }
+
+        async setupFFmpeg() {
+            // Load FFmpeg
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.11.0/dist/ffmpeg.min.js';
+            document.body.appendChild(script);
+
+            // Wait for FFmpeg to load
+            await new Promise(resolve => script.onload = resolve);
+            
+            this.ffmpeg = FFmpeg.createFFmpeg({ log: true });
+            await this.ffmpeg.load();
+        }
+
+        async startPlayback() {
+            if (this.isPlaying) return;
+
+            // 创建并配置音频源
+            this.audioSource = this.audioContext.createBufferSource();
+            this.audioSource.buffer = this.audioBuffer;
+
+            // 创建用于录制的音频目标节点
+            this.recordingDestination = this.audioContext.createMediaStreamDestination();
+
+            // 音频路由：源 -> 主输出 和 录制目标
+            this.audioSource.connect(this.audioContext.destination);
+            this.audioSource.connect(this.recordingDestination);
+
+            // 设置视频流
+            const videoStream = this.canvas.captureStream(60);
+            
+            // 合并音频和视频流
+            const combinedStream = new MediaStream([
+                ...videoStream.getVideoTracks(),
+                ...this.recordingDestination.stream.getAudioTracks()
+            ]);
+
+            // 初始化 MediaRecorder
+            this.mediaRecorder = new MediaRecorder(combinedStream, {
+                mimeType: 'video/webm;codecs=vp9',
+                videoBitsPerSecond: 5000000
+            });
+
+            this.recordedChunks = [];
+            this.mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) {
+                    this.recordedChunks.push(e.data);
+                }
+            };
+
+            this.mediaRecorder.onstop = () => {
+                this.downloadBtn.disabled = false;
+                this.recordBtn.textContent = 'Record';
+                this.isRecording = false;
+            };
+
+            // 开始录制
+            this.mediaRecorder.start(1000);
+            this.isRecording = true;
+            this.recordBtn.textContent = 'Recording...';
+            this.downloadBtn.disabled = true;
+
+            // 开始播放音频
+            this.startTime = this.audioContext.currentTime;
+            this.audioSource.start();
+            this.isPlaying = true;
+
+            // 设置音频结束时的处理
+            this.audioSource.onended = () => {
+                this.stopPlayback();
+                this.stopRecording();
+            };
+
+            // 开始动画
+            requestAnimationFrame(this.animate);
+        }
+
+        
+
+        stopPlayback() {
+            if (this.audioSource) {
+                try {
+                    this.audioSource.stop();
+                } catch (e) {
+                    console.log('Audio already stopped');
+                }
+                this.audioSource.disconnect();
+                this.audioSource = null;
+            }
+            if (this.recordingDestination) {
+                this.recordingDestination.disconnect();
+                this.recordingDestination = null;
+            }
+            this.isPlaying = false;
+        }
+
+        stopRecording() {
+            if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                this.mediaRecorder.stop();
+                this.isRecording = false;
+            }
+        }
+
+        async handleAudioUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            this.setStatus('Analyzing audio...');
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                await this.analyzeAudio();
+            } catch (error) {
+                console.error('Error:', error);
+                this.setStatus('Error: ' + error.message);
+            }
+        }
+
+        setupRecording() {
+            this.recordBtn = document.getElementById('recordBtn');
+            this.downloadBtn = document.getElementById('downloadBtn');
+
+            this.recordBtn.onclick = () => {
+                if (!this.isRecording) {
+                    this.startRecording();
+                }
+            };
+
+            this.downloadBtn.onclick = () => {
+                this.downloadRecording();
+            };
+        }
+
+        async startRecording() {
+            try {
+                const stream = this.canvas.captureStream(60);
+                
+                // Set up MediaRecorder before starting playback
+                this.mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'video/webm;codecs=vp9',
+                    videoBitsPerSecond: 5000000
+                });
+
+                this.recordedChunks = [];
+                this.mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        this.recordedChunks.push(e.data);
+                    }
+                };
+
+                this.mediaRecorder.onstop = () => {
+                    this.downloadBtn.disabled = false;
+                    this.recordBtn.textContent = 'Record';
+                    this.isRecording = false;
+                };
+
+                this.mediaRecorder.start(1000);
+                this.isRecording = true;
+                this.recordBtn.textContent = 'Recording...';
+                this.downloadBtn.disabled = true;
+
+                // Start playback after recording is set up
+                this.startPlayback();
+            } catch (error) {
+                console.error('Recording error:', error);
+                this.setStatus('Recording error: ' + error.message);
+            }
+        }
+
+
+        async convertToMp4(webmBlob) {
+            this.setStatus('Converting to MP4...');
+            
+            // Convert Blob to ArrayBuffer
+            const webmBuffer = await webmBlob.arrayBuffer();
+            
+            // Write WebM file to FFmpeg's virtual filesystem
+            this.ffmpeg.FS('writeFile', 'input.webm', new Uint8Array(webmBuffer));
+            
+            // Run FFmpeg conversion
+            await this.ffmpeg.run(
+                '-i', 'input.webm',
+                '-c:v', 'libx264',
+                '-c:a', 'aac',
+                '-strict', 'experimental',
+                'output.mp4'
+            );
+            
+            // Read the output file
+            const mp4Data = this.ffmpeg.FS('readFile', 'output.mp4');
+            
+            // Create MP4 blob
+            const mp4Blob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
+            
+            // Clean up
+            this.ffmpeg.FS('unlink', 'input.webm');
+            this.ffmpeg.FS('unlink', 'output.mp4');
+            
+            return mp4Blob;
+        }
+
+        async downloadRecording(format = 'mp4') {
+            const webmBlob = new Blob(this.recordedChunks, { type: 'video/webm' });
+            
+            let finalBlob;
+            let extension;
+            
+            if (format === 'mp4') {
+                try {
+                    finalBlob = await this.convertToMp4(webmBlob);
+                    extension = 'mp4';
+                    this.setStatus('Conversion complete');
+                } catch (error) {
+                    console.error('MP4 conversion failed:', error);
+                    this.setStatus('MP4 conversion failed, downloading WebM instead');
+                    finalBlob = webmBlob;
+                    extension = 'webm';
+                }
+            } else {
+                finalBlob = webmBlob;
+                extension = 'webm';
+            }
+
+            const url = URL.createObjectURL(finalBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `music-visualization.${extension}`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+
+        async analyzeAudio() {
+            const audioData = this.audioBuffer.getChannelData(0);
+            this.beats = this.beatDetector.analyzeAudioData(audioData);
+            
+            if (this.beats.length > 0) {
+                this.generateNotes();
+                document.getElementById('playBtn').disabled = false;
+                this.recordBtn.disabled = false;
+                this.setStatus(`Found ${this.beats.length} beats`);
+            } else {
+                this.setStatus('No beats detected. Try adjusting sensitivity.');
+            }
+        }
+
+        animate() {
+            const currentTime = this.audioContext.currentTime - this.startTime;
+            
+            // 清空画布
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+            // 绘制判定线（可以改成更淡的颜色或者完全移除）
+            this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+            this.ctx.lineWidth = 1;
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, this.judgeLineY);
+            this.ctx.lineTo(this.canvas.width, this.judgeLineY);
+            this.ctx.stroke();
+
+            // 更新和绘制气球
+            this.notes.forEach(balloon => {
+                if (!balloon.active) return;
+
+                // 计算气球位置
+                balloon.y = this.judgeLineY - (balloon.beatTime - currentTime) * balloon.speed;
+
+                // 检查是否到达判定线
+                if (!balloon.popped && Math.abs(balloon.y - this.judgeLineY) < 5) {
+                    balloon.popped = true;
+                }
+
+                // 如果气球被扎破，开始淡出
+                if (balloon.popped) {
+                    balloon.alpha -= 0.05;
+                    if (balloon.alpha <= 0) {
+                        balloon.active = false;
+                        return;
+                    }
+                }
+
+                // 绘制气球
+                balloon.draw(this.ctx, currentTime);
+            });
+
+            if (currentTime < this.audioBuffer.duration) {
+                requestAnimationFrame(this.animate);
+            }
+        }
+
+        generateNotes() {
+            this.notes = [];
+            const laneCount = 4;
+            const laneWidth = this.canvas.width / laneCount;
+            
+            this.beats.forEach(beat => {
+                const laneIndex = Math.floor(Math.random() * laneCount);
+                const x = laneIndex * laneWidth + laneWidth / 2;
+                
+                this.notes.push(new Balloon(x, beat.time, this.noteSpeed, beat.energy));
+            });
+        }
+
+        start() {
+            const source = this.audioContext.createBufferSource();
+            source.buffer = this.audioBuffer;
+            source.connect(this.audioContext.destination);
+            
+            this.startTime = this.audioContext.currentTime;
+            source.start();
+
+            // Stop recording when audio ends
+            source.onended = () => {
+                if (this.isRecording) {
+                    this.stopRecording();
+                }
+            };
+
+            requestAnimationFrame(this.animate);
+        }
+
+    }
+
+    new MusicVisualizer();
+    </script>
+</body>
+</html>
